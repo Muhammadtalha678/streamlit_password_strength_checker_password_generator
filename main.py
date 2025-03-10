@@ -2,7 +2,54 @@ import re
 import streamlit as st
 import string
 import secrets
-import random
+import os
+import json
+import requests
+PASSWORD_HISTORY_FILE = "password_history.json"
+
+# 🔹 Get user's unique identifier (IP-based method)
+def get_user():
+    try:
+        response = requests.get("https://api64.ipify.org?format=json")  
+        return response.json()["ip"]  # Use IP as user ID
+    except:
+        return "unknown_user"  # Default if IP fetch fails
+
+# 🔹 Load existing password history
+def load_password_history():
+    if os.path.exists(PASSWORD_HISTORY_FILE):
+        try:
+            with open(PASSWORD_HISTORY_FILE, "r") as file:
+                content = file.read().strip()  # Read and remove extra spaces/newlines
+                return json.loads(content) if content else {}  # Return {} if file is empty
+        except json.JSONDecodeError:
+            return {}  # If JSON is corrupted, return empty dictionary
+    return {}
+
+# 🔹 Save password history
+def save_password_history(history):
+    with open(PASSWORD_HISTORY_FILE, "w") as file:
+        json.dump(history, file, indent=4)
+
+# 🔹 Check if password was used before
+def is_reused_password(user, password):
+    history = load_password_history()
+    return user in history and password in history[user]
+
+# 🔹 Add password to history (only last 10)
+def update_password_history(user, password):
+    history = load_password_history()
+    
+    if user not in history:
+        history[user] = []
+    
+    history[user].append(password)
+    
+    history[user] = history[user][-10:]  # Keep only last 10
+    
+    save_password_history(history)
+
+
 
 def blackListPass():
     try:
@@ -69,13 +116,17 @@ def passswor_checker(password):
 def main():
     st.title("Password Strength Meter")
     password = st.text_input("Enter Your Password",value=st.session_state.get('generated_pass'))
-    
+    user_id = get_user()
     if st.button("Check Password"):
         if password:
             if password in blackListPass():
                 st.error("⚠️ Weak Password! Choose a stronger one") 
             else:
-                passswor_checker(password)
+                if is_reused_password(user_id, password):
+                    st.error("🚨 This password was used before! Choose a new one.")
+                else:
+                    update_password_history(user_id, password)
+                    passswor_checker(password)
         else:
             
             st.error("Please enter a password.")
